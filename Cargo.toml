@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-anyhow = "1.0.101"
-clap = { version = "4.5.58", features = ["derive"] }
-nix = { version = "0.28", features = ["ptrace"] }
+anyhow = "1.0.102"
+clap = { version = "4.5.60", features = ["derive"] }
+nix = { version = "0.31.2", features = ["process", "ptrace"] }
+syscalls = "0.8.1"

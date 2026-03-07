@@ -13,14 +13,6 @@ pub fn check(binary: String, args: Vec<String>) -> Result<()> {
         println!("[*] With args: {:?}", args);
     }
 
-    // TODO:
-    // 1. fork  ✔
-    // 2. ptrace TRACEME
-    // 3. execve target
-    // 4. parent wait
-    // 5. PTRACE_SECCOMP_GET_FILTER
-    // 6. dump BPF
-
     let program: CString = CString::new(binary.as_str()).unwrap();
     let arguments: Vec<CString> = args
                                 .iter()
@@ -63,7 +55,42 @@ pub fn check(binary: String, args: Vec<String>) -> Result<()> {
                             let regs = ptrace::getregs(pid).unwrap();
             
                             if let Some(syscall) = Sysno::new(regs.orig_rax as usize) {
-                                println!("Child tries syscall {}", syscall.name());
+                                // println!("Child tries syscall {}", syscall.name());
+                                
+                                let rdi = regs.rdi;
+                                let rsi = regs.rsi;
+                                let rdx = regs.rdx;
+                                let r10 = regs.r10;
+                                let r8 = regs.r8;
+                                let r9 = regs.r9;
+                                
+                                match syscall {
+                                    Sysno::prctl => {
+                                        println!("prctl({}, {}, {}, {}, {}, {:#X})", rdi, rsi, rdx, r10, r8, r9);
+                                    },
+                                    Sysno::seccomp => {
+                                        
+                                        let op = match rdi {
+                                            0 => "SECCOMP_SET_MODE_STRICT",
+                                            1 => "SECCOMP_SET_MODE_FILTER",
+                                            2 => "SECCOMP_GET_ACTION_AVAIL",
+                                            3 => "SECCOMP_GET_NOTIF_SIZES",
+                                            _ => unreachable!()
+                                        };
+                                        
+                                        let flag = rdi;
+                                        
+                                        // TODO
+                                        // SECCOMP_SET_MODE_FILTER
+                                        if rdi == 2 {
+                                            
+                                        }
+                                        
+                                        
+                                        println!("seccomp({}, {}, {:#X})", op, flag, rdx);
+                                    },
+                                    _ => {}
+                                }
                             }
                         }
             

@@ -1,10 +1,74 @@
 use anyhow::Result;
-
 use nix::sys::ptrace::{self, AddressType};
 use nix::sys::wait::{waitpid, WaitStatus};
-use nix::unistd::{execvp, fork, ForkResult};
+use nix::unistd::{execvp, fork, ForkResult, Pid};
 use syscalls::Sysno;
 use std::ffi::{CString, CStr};
+use libc::{PR_SET_NO_NEW_PRIVS, SECCOMP_SET_MODE_FILTER, user_regs_struct};
+
+#[allow(unused)]
+pub mod bpf {
+    pub const BPF_LD   : u8 = 0x00;
+    pub const BPF_JMP  : u8 = 0x05;
+    pub const BPF_RER  : u8 = 0x06;
+    
+    pub const BPF_W    : u8 = 0x00;
+    
+    pub const BPF_ABS  : u8 = 0x20;
+    
+    pub const BPF_JA   : u8 = 0x00;
+    pub const BPF_JEQ  : u8 = 0x10;
+    pub const BPF_JGT  : u8 = 0x20;
+    pub const BPF_JGE  : u8 = 0x30;
+    pub const BPF_JSET : u8 = 0x40;
+}
+
+struct SockFilter {
+    code : u16,
+    jt : u8,
+    jf : u8,
+    k : u32
+}
+
+impl SockFilter {
+    fn new(rule: u64) -> Self {
+        SockFilter { 
+            code: (rule & 0xffff) as u16, 
+            jt: ((rule >> 16) & 0xff) as u8, 
+            jf: ((rule >> 24) & 0xff) as u8, 
+            k: (rule >> 32) as u32 
+        }
+    }
+    
+    fn create(pid: Pid, address: AddressType) -> Self {
+        let rule = ptrace::read(pid, address).unwrap() as u64;
+        
+        Self::new(rule)
+    }
+    
+    fn create_all(pid: Pid, address: AddressType) -> Vec<Self> {
+        let len = ptrace::read(pid, address).unwrap();
+        let filter_ptr = ptrace::read(pid, (address as u64 + 8) as AddressType).unwrap() as i64;
+        
+        (0..len)
+            .map(|i| Self::create(pid, (filter_ptr + 8*i) as AddressType))
+            .collect()
+    }
+    
+    fn print_raw(self: &Self) {
+        println!("{:#06X} {:#04X} {:#04X} {:#010X}", self.code, self.jt, self.jf, self.k);
+    }
+}
+
+fn is_set_no_new_prevs(regs: &user_regs_struct) -> bool {
+    regs.rdi == PR_SET_NO_NEW_PRIVS as u64
+    && regs.rsi == 1
+    && regs.rdx == 0
+    && regs.r10 == 0
+    && regs.r8 == 0
+}
+
+
 
 pub fn check(binary: String, args: Vec<String>) -> Result<()> {
     println!("[*] Executing: {}", binary);
@@ -57,65 +121,29 @@ pub fn check(binary: String, args: Vec<String>) -> Result<()> {
                             if let Some(syscall) = Sysno::new(regs.orig_rax as usize) {
                                 // println!("Child tries syscall {}", syscall.name());
                                 
-                                let rdi = regs.rdi;
-                                let rsi = regs.rsi;
-                                let rdx = regs.rdx;
-                                let r10 = regs.r10;
-                                let r8 = regs.r8;
-                                let r9 = regs.r9;
-                                
                                 match syscall {
                                     Sysno::prctl => {
-                                        println!("prctl({}, {}, {}, {}, {}, {:#X})", rdi, rsi, rdx, r10, r8, r9);
+                                        if is_set_no_new_prevs(&regs) {
+                                            println!("Clear the prev filter!")
+                                        }
+                                                                                
                                     },
                                     Sysno::seccomp => {
                                         
-                                        let op = match rdi {
-                                            0 => "SECCOMP_SET_MODE_STRICT",
-                                            1 => "SECCOMP_SET_MODE_FILTER",
-                                            2 => "SECCOMP_GET_ACTION_AVAIL",
-                                            3 => "SECCOMP_GET_NOTIF_SIZES",
-                                            _ => unreachable!()
-                                        };
+                                        let op = regs.rdi;
+                                        let flags = regs.rsi;
                                         
-                                        let flags = rsi;
-                                        
-                                        match op {
-                                            "SECCOMP_SET_MODE_FILTER" => {
-                                                if flags == 0 {
-                                                    let len = ptrace::read(pid, rdx as AddressType).unwrap();
-                                                    println!("Seccomp ruler len: {}", len);
-                                                    
-                                                    let filter_ptr = ptrace::read(pid, (rdx+12) as AddressType).unwrap() << 32 |
-                                                        ptrace::read(pid, (rdx+8) as AddressType).unwrap();
-                                                    
-                                                    let filter: Vec<i64> = (0..=len)
-                                                        .map(|i| ptrace::read(pid, (filter_ptr + 8*i) as AddressType).unwrap())
-                                                        .collect();
-                                                    
-                                                    print!("rule: ");
-                                                    for rule in filter.iter() {
-                                                        println!("{:#X}", rule);
-                                                    }
-                                                    
-                                                    // TODO: explain the rule code
-                                                    println!("");
-                                                    
-                                                    println!("Seccomp load!")
-                                                }
-                                            },
-                                            "SECCOMP_GET_ACTION_AVAIL" => {
-                                                let rule = ptrace::read(pid, rdx as AddressType).unwrap() as u32;
-                                                println!("rule check: {:#X}", rule);
-                                            },
-                                            _ => {}
+                                        if op == SECCOMP_SET_MODE_FILTER as u64 && flags == 0 {
+                                            let rules : Vec<SockFilter> = SockFilter::create_all(pid, regs.rdx as AddressType);
+                                            
+                                            for rule in rules {
+                                                rule.print_raw();
+                                            }
+                                            println!("Seccomp load!")
                                         }
-                                        
-                                        
-                                        println!("seccomp({}, {}, {:#X})", op, flags, rdx);
                                     },
                                     _ => {}
-                                }
+                                }                                
                             }
                         }
             

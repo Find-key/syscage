@@ -20,14 +20,18 @@ enum Commands {
         #[arg(last = true)]
         args: Vec<String>,
     },
+    /// Inspect an ELF file and report its architecture and enabled hardening
+    Checksec {
+        /// Target ELF file
+        elf: String,
+    },
 }
 
 impl Syscage {
     pub fn run(self) -> anyhow::Result<()> {
         match self.command {
-            Commands::Checkbox { binary, args } => {
-                crate::seccomp::check(binary, args)
-            }
+            Commands::Checkbox { binary, args } => crate::seccomp::check(binary, args),
+            Commands::Checksec { elf } => crate::checksec::check(elf),
             // 以后增加新命令，只需要在这里扩充
         }
     }

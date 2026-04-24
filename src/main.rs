@@ -1,4 +1,5 @@
 mod cli;
+mod checksec;
 mod seccomp;
 
 use anyhow::Result;

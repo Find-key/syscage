@@ -9,3 +9,4 @@ clap = { version = "4.5.60", features = ["derive"] }
 libc = "0.2.183"
 nix = { version = "0.31.2", features = ["process", "ptrace"] }
 syscalls = "0.8.1"
+goblin = "0.8"

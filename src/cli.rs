@@ -12,7 +12,7 @@ pub struct Syscage {
 #[derive(Subcommand)]
 enum Commands {
     /// Execute a program and dump its seccomp filter
-    Check {
+    Checkbox {
         /// Target executable
         binary: String,
 
@@ -25,7 +25,7 @@ enum Commands {
 impl Syscage {
     pub fn run(self) -> anyhow::Result<()> {
         match self.command {
-            Commands::Check { binary, args } => {
+            Commands::Checkbox { binary, args } => {
                 crate::seccomp::check(binary, args)
             }
             // 以后增加新命令，只需要在这里扩充

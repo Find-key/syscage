@@ -1,3 +1,9 @@
 /target
 
 /test
+
+.codex
+
+vendor
+
+.cargo

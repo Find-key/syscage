@@ -1,0 +1,47 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build And Publish Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run tests
+        run: cargo test
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Package release artifacts
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          mkdir -p dist
+          cp target/release/syscage dist/syscage
+          tar -C dist -czf "dist/syscage-${TAG_NAME}-linux-x86_64.tar.gz" syscage
+          sha256sum "dist/syscage-${TAG_NAME}-linux-x86_64.tar.gz" > "dist/syscage-${TAG_NAME}-linux-x86_64.tar.gz.sha256"
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/syscage-*.tar.gz
+            dist/syscage-*.tar.gz.sha256

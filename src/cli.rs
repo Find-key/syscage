@@ -2,8 +2,9 @@ use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(name = "syscage")]
-#[command(version = "0.1")]
-#[command(about = "A minimal seccomp analysis tool written in Rust")]
+#[command(version = "1.0.0")]
+#[command(about = "A Linux binary and seccomp analysis tool written in Rust
+")]
 pub struct Syscage {
     #[command(subcommand)]
     command: Commands,

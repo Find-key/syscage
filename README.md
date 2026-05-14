@@ -1,84 +1,49 @@
 # syscage
-`syscage` 是一个使用 Rust 编写的 Linux 安全分析工具，当前提供两个子命令：
-- `checksec`：检查 ELF 二进制的安全加固状态
-- `checkbox`：执行目标程序并跟踪其安装的 seccomp 过滤器
 
-它适合用于二进制安全分析、沙箱审计、CTF/Pwn 学习和 Linux 安全研究等场景。
+Linux 安全分析工具，使用 Rust 编写，适用于二进制安全分析、沙箱审计、CTF/Pwn 学习和 Linux 安全研究等场景。
+
 ## 功能
 
-### `checksec`
-分析 ELF 文件的常见安全属性，包括：
-- `Arch`
-- `RELRO`
-- `SHSTK`
-- `IBT`
-- `Canary`
-- `NX`
-- `PIE`
-- `FORTIFY`
-- `RPATH`
-- `RUNPATH`
-- `Stripped`
-- `RWX`
-输出结果带有颜色高亮，方便快速识别风险项。
+### `checksec` — 检查 ELF 安全加固
 
-### `checkbox`
-运行指定程序，并在它安装 seccomp 过滤器时进行跟踪与解析，支持识别：
-- `prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, ...)`
-- `seccomp(SECCOMP_SET_MODE_FILTER, ...)`
-工具会尝试读取目标进程中的 seccomp BPF 程序，并输出带注释的规则列表，便于理解过滤器的行为。
+分析 ELF 文件的 12 项安全属性：
 
-## 项目结构
-```/dev/null/syscage-tree.txt#L1-18
-syscage/
-├─ Cargo.toml
-├─ Cargo.lock
-├─ src/
-│  ├─ main.rs
-│  ├─ cli.rs
-│  ├─ checksec/
-│  │  ├─ mod.rs
-│  │  ├─ format.rs
-│  │  ├─ model.rs
-│  │  └─ parser.rs
-│  └─ seccomp/
-│     ├─ mod.rs
-│     ├─ bpf.rs
-│     ├─ format.rs
-│     └─ reader.rs
-├─ tests/
-├─ test/
-└─ README.md
-```
+`Arch` `RELRO` `SHSTK` `IBT` `Canary` `NX` `PIE` `FORTIFY` `RPATH` `RUNPATH` `Stripped` `RWX`
+
+输出带 ANSI 颜色高亮：绿色 = 安全，红色 = 风险，黄色 = 未知。
+
+### `checkbox` — 跟踪 seccomp 过滤器
+
+运行目标程序，通过 `ptrace` 捕获 seccomp 安装调用（`prctl(PR_SET_SECCOMP)` 和 `seccomp(SECCOMP_SET_MODE_FILTER)`），读取并解析 seccomp BPF 程序，输出带注释的规则列表。
 
 ## 环境要求
-- Rust
-- Cargo
-- Linux
 
-其中 `checkbox` 依赖 `ptrace`，因此需要在支持 `ptrace` 的 Linux 环境中运行。某些系统可能还需要调整相关安全限制。
+- Rust + Cargo
+- Linux（`checkbox` 依赖 `ptrace`，某些系统可能需要调整 `ptrace` 安全限制）
 
 ## 构建
+
 ```sh
-cargo build
 cargo build --release
 ```
 
 ## 使用方法
-查看帮助：
+
 ```sh
-cargo run -- --help
-./target/debug/syscage --help
+# 查看帮助
+syscage --help
+
+# 检查 ELF 安全属性
+syscage checksec <elf>
+
+# 跟踪 seccomp 过滤器
+syscage checkbox <binary> [-- <args>]
 ```
 
-### 检查 ELF 安全属性
-```sh
-cargo run -- checksec /bin/ls
-./target/debug/syscage checksec /bin/ls
-```
+### `checksec` 示例
 
-示例输出：
 ```sh
+$ syscage checksec /bin/ls
 File: /bin/ls
 Arch:          amd64-64-little
 RELRO:         Full RELRO
@@ -94,29 +59,34 @@ Stripped:      Disabled
 RWX:           Disabled
 ```
 
-### 跟踪 seccomp 过滤器
+### `checkbox` 示例
+
 ```sh
-cargo run -- checkbox /path/to/program -- arg1 arg2
-./target/debug/syscage checkbox /path/to/program -- arg1 arg2
+$ syscage checkbox /path/to/program -- arg1 arg2
+[*] Executing: /path/to/program
+[*] With args: ["arg1", "arg2"]
+Monitoring child process PID: 12345
+
+=== Seccomp filter detected ===
+Source: seccomp(SECCOMP_SET_MODE_FILTER, flags=0x5 [TSYNC, LOG])
+
+ line  CODE  JT   JF      K           COMMENT
+==============================================================
+ 0000: 0x20 0x00 0x00 0x00000004  A = arch
+ 0001: 0x15 0x00 0x01 0xc000003e  if (A != ARCH_X86_64) goto 0003
+ 0002: 0x06 0x00 0x00 0x7fff0000  return ALLOW
+ 0003: 0x06 0x00 0x00 0x00000000  return KILL
+Status: loaded
 ```
 
-当目标程序调用 seccomp 相关接口安装过滤器时，工具会打印：
-- 过滤器安装来源
-- seccomp flags
-- BPF 指令列表
-- 每条规则的可读注释
-- seccomp 返回动作
-
-## 命令行
-当前支持以下命令：
-```sh
-syscage checksec <elf>
-syscage checkbox <binary> [args...]
-```
+输出包括：过滤器安装来源、seccomp flags、BPF 指令列表及可读注释、seccomp 返回动作。
 
 ## 实现说明
+
 ### `checksec`
+
 `checksec` 基于 ELF 解析结果识别安全属性，主要使用：
+
 - ELF Header
 - Program Header
 - 动态节
@@ -124,33 +94,34 @@ syscage checkbox <binary> [args...]
 - GNU Property Notes
 
 ### `checkbox`
-`checkbox` 的基本流程是：
-1. `fork` 子进程
-2. 子进程执行目标程序
-3. 父进程通过 `ptrace` 跟踪系统调用
-4. 在 seccomp 过滤器安装时读取 `sock_fprog`
-5. 解析并格式化 seccomp BPF 规则
+
+`checkbox` 的基本流程：
+
+1. `fork` 子进程并执行目标程序
+2. 父进程通过 `ptrace` 跟踪系统调用
+3. 在 seccomp 过滤器安装时读取 `sock_fprog` 结构
+4. 解析并格式化 seccomp BPF 规则
 
 ## 测试
-运行测试：
+
 ```sh
 cargo test
-cargo test -- --nocapture
 ```
 
 ## 注意事项
-- `checksec` 面向 ELF 文件，非 ELF 输入会报错
-- `checkbox` 依赖 Linux `ptrace`
-- seccomp 过滤器的行为与内核版本、架构和目标程序实现有关
-- `SHSTK` 和 `IBT` 仅对特定架构有意义
+
+- `checksec` 仅支持 ELF 文件，非 ELF 输入会报错
+- `checkbox` 依赖 Linux `ptrace`，部分系统需调整 `kernel.yama.ptrace_scope`
+- seccomp 过滤器行为与内核版本、架构和目标程序实现有关
+- `SHSTK` 和 `IBT` 仅对 x86 有意义，其他架构显示 Unknown
 
 ## 后续方向
-这个项目后续可以继续扩展，例如：
+
 - 增加 JSON 输出
-- 支持批量扫描
-- 支持目录递归分析
+- 支持批量扫描与目录递归分析
 - 增强 seccomp 规则可视化
 - 增加更多集成测试样本
 
 ## 贡献
+
 欢迎提交 Issue 和 Pull Request。
